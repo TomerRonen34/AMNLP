@@ -16,7 +16,7 @@ else:
     device = torch.device("cpu")
 
 
-def train(model, optimizer, wsd_train_dataset, wsd_dev_dataset, num_epochs=20, batch_size=100):
+def train(model, optimizer, wsd_train_dataset, wsd_dev_dataset, num_epochs=20, batch_size=100, debug_no_eval=False):
     """
     Run the training loop for the given arguments.
 
@@ -50,14 +50,17 @@ def train(model, optimizer, wsd_train_dataset, wsd_dev_dataset, num_epochs=20, b
 
     for epoch in range(num_epochs):
 
-        model.eval()
-        cur_train_acc = evaluate(model, training_generator, iter_lim=100, ignore_label=no_sense_index)
-        train_acc.append(cur_train_acc)
-        cur_val_acc = evaluate(model, val_generator, ignore_label=no_sense_index)
+        if not debug_no_eval:
+            model.eval()
+            cur_train_acc = evaluate(model, training_generator, iter_lim=100, ignore_label=no_sense_index)
+            train_acc.append(cur_train_acc)
+            cur_val_acc = evaluate(model, val_generator, ignore_label=no_sense_index)
+        else:
+            cur_val_acc = -1
         val_acc.append(cur_val_acc)
 
         model.train()
-        with tqdm(training_generator) as prg_train:
+        with tqdm(training_generator, desc="train") as prg_train:
             for i, sample in enumerate(prg_train):
                 optimizer.zero_grad()
 
@@ -98,22 +101,23 @@ def evaluate(model, data_generator, iter_lim=None, ignore_label=None):
         correct = 0
         total = 0
 
-        for i, sample in enumerate(data_generator):
-            if iter_lim is not None and i >= iter_lim:
-                break
+        with tqdm(data_generator, desc="evaluate") as prg_data:
+            for i, sample in enumerate(prg_data):
+                if iter_lim is not None and i >= iter_lim:
+                    break
 
-            y_logits, y_true = __run_sample(sample, model, is_sentence_samples)
+                y_logits, y_true = __run_sample(sample, model, is_sentence_samples)
 
-            _, y_pred = torch.max(y_logits.data, -1)
+                _, y_pred = torch.max(y_logits.data, -1)
 
-            if ignore_label is not None:
-                sense_mask = y_true.ne(ignore_label)
+                if ignore_label is not None:
+                    sense_mask = y_true.ne(ignore_label)
 
-                y_true = y_true[sense_mask]
-                y_pred = y_pred[sense_mask]
+                    y_true = y_true[sense_mask]
+                    y_pred = y_pred[sense_mask]
 
-            correct += (y_pred == y_true).sum()
-            total += y_true.size(0)
+                correct += (y_pred == y_true).sum()
+                total += y_true.size(0)
 
         return float(correct) / float(total)
 
@@ -134,7 +138,6 @@ def __run_sample(sample, model, is_sentence_samples):
 
 
 def evaluate_verbose(model, dataset, iter_lim=10, shuffle=True):
-
     # TODO check self attention mode
 
     g = data.DataLoader(
@@ -211,7 +214,7 @@ def highlight(eval_df, attention_df, slicer):
         style_vec = [''] * I
 
         row_attention = attention_df.loc[row['index']]
-        style_arr = np.array(['']*len(row_attention), dtype='<U50')
+        style_arr = np.array([''] * len(row_attention), dtype='<U50')
         style_arr[row_attention > 0] = np.array(Styler._background_gradient(row_attention[row_attention > 0]))
 
         style_vec += list(style_arr)
