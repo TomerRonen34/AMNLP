@@ -57,6 +57,8 @@ m = model.WSDModel(
     dropout_prob=dropout,
     use_padding=True,
     use_positional_encodings=True,
+    pos_is_causal=True,
+    pos_normalize_magnitude=True
 ).to(device)
 
 optimizer = torch.optim.Adam(m.parameters(), lr=lr)

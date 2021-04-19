@@ -16,7 +16,7 @@ else:
     device = torch.device("cpu")
 
 
-def train(model, optimizer, wsd_train_dataset, wsd_dev_dataset, num_epochs=20, batch_size=100, debug_no_eval=False):
+def train(model, optimizer, wsd_train_dataset, wsd_dev_dataset, num_epochs=20, batch_size=100):
     """
     Run the training loop for the given arguments.
 
@@ -50,13 +50,13 @@ def train(model, optimizer, wsd_train_dataset, wsd_dev_dataset, num_epochs=20, b
 
     for epoch in range(num_epochs):
 
-        if not debug_no_eval:
+        if epoch != 0:
             model.eval()
             cur_train_acc = evaluate(model, training_generator, iter_lim=100, ignore_label=no_sense_index)
             train_acc.append(cur_train_acc)
             cur_val_acc = evaluate(model, val_generator, ignore_label=no_sense_index)
         else:
-            cur_val_acc = -1
+            cur_val_acc = 0
         val_acc.append(cur_val_acc)
 
         model.train()

@@ -1,15 +1,19 @@
+from typing import Union
+
 import torch
 from torch import nn
 import torch.nn.init as init
 import math
 from scipy.special import comb as nchoosek
 
+from config import INF
+
 
 class WSDModel(nn.Module):
 
-    def __init__(self, V, Y, D=300, dropout_prob=0.2, use_padding=False,
-                 use_positional_encodings=False, use_causal_attention=False,
-                 pos_exponent: int = 1):
+    def __init__(self, V, Y, D: int = 300, dropout_prob: float = 0.2, use_padding: bool = False,
+                 use_positional_encodings: bool = False, pos_exponent: int = 1, pos_cutoff_position: int = 5,
+                 pos_is_causal: bool = False, pos_normalize_magnitude: bool = False):
         super(WSDModel, self).__init__()
         self.use_padding = use_padding
 
@@ -30,8 +34,10 @@ class WSDModel(nn.Module):
         self.layer_norm = nn.LayerNorm([self.D])
 
         self.use_positional_encodings = use_positional_encodings
-        self.use_causal_attention = use_causal_attention
         self.pos_exponent = pos_exponent
+        self.pos_cutoff_position = pos_cutoff_position
+        self.pos_is_causal = pos_is_causal
+        self.pos_normalize_magnitude = pos_normalize_magnitude
 
     def attention(self, X, Q, mask):
         """
@@ -52,21 +58,37 @@ class WSDModel(nn.Module):
         logits = torch.bmm(Q @ self.W_A, X.transpose(1, 2))
 
         if self.use_positional_encodings:
-            pos_rep = self.generate_positional_representations(seq_len=X.shape[1], exponent=self.pos_exponent,
-                                                               is_cuda=logits.is_cuda)
-            logits = logits + pos_rep
+            pos_rep = self.generate_positional_representations(seq_len=X.shape[1],
+                                                               exponent=self.pos_exponent,
+                                                               cutoff_position=self.pos_cutoff_position,
+                                                               is_causal=self.pos_is_causal,
+                                                               device=logits.device)
+            if self.pos_normalize_magnitude:
+                not_inf = (~torch.isinf(pos_rep)) & (pos_rep != -INF)
+                pos_magnitude = torch.max(torch.abs(pos_rep[not_inf]))
+                logits_magnitude = torch.max(torch.abs(logits))
 
-        if self.use_causal_attention:
-            pass
+                pos_rep_norm = pos_rep / pos_magnitude * logits_magnitude
+                pos_rep = torch.where(not_inf, pos_rep_norm, torch.Tensor([-INF]).to(pos_rep.device))
+
+                # not_inf = (~torch.isinf(pos_rep)) & (pos_rep != -INF)
+                # pos_magnitude_after_normalization = torch.max(torch.abs(pos_rep[not_inf]))
+                # print(pos_magnitude.item(), logits_magnitude.item(), pos_magnitude_after_normalization.item())
+
+            logits = logits + pos_rep
 
         if self.use_padding:
             # TODO part 2: Your code here.
-            e = 1e12
-            logits = logits.masked_fill(mask.unsqueeze(1) == self.pad_id, -e)
+            logits = logits.masked_fill(mask.unsqueeze(1) == self.pad_id, -INF)
 
         # TODO Part 1: continue.
         A = self.softmax(logits)
         Q_c = torch.bmm(A, X @ self.W_O)
+
+        if torch.rand(1).item() < 0.01:
+            print("\nA\n", A[0, :5, :5])
+            if self.use_positional_encodings:
+                print("\npos_rep\n", pos_rep[:5, :5])
 
         return Q_c, A.squeeze()
 
@@ -102,17 +124,24 @@ class WSDModel(nn.Module):
         return y_logits, A
 
     @staticmethod
-    def generate_positional_representations(seq_len: int, exponent: int = 1, is_causal: bool = False,
-                                            is_cuda: bool = False) -> torch.Tensor:
+    def generate_positional_representations(seq_len: int,
+                                            exponent: int = 1,
+                                            cutoff_position: int = 5,
+                                            is_causal: bool = False,
+                                            device: Union[str, torch.device] = "cpu") -> torch.Tensor:
         relative_positions = torch.arange(seq_len).unsqueeze(0) - torch.arange(seq_len).unsqueeze(1)
-        if is_cuda:
-            relative_positions = relative_positions.cuda()
+        relative_positions = relative_positions.to(device)
 
-        is_not_neg = relative_positions >= 0
-        minus_if_neg = (is_not_neg.float() - 0.5) * 2
+        abs_relative_positions = torch.abs(relative_positions).float()
+        abs_relative_positions = torch.where(abs_relative_positions < cutoff_position, abs_relative_positions,
+                                             torch.Tensor([cutoff_position]).to(device))
+        pos_rep = - abs_relative_positions ** exponent
 
-        pos_rep = torch.abs(relative_positions.float()) ** exponent
-        pos_rep = pos_rep * minus_if_neg
+        if is_causal:
+            is_future = relative_positions > 0
+            # minus_inf = torch.Tensor([-float("inf")]).to(device)
+            minus_inf = torch.Tensor([-INF]).to(device)
+            pos_rep = torch.where(is_future, minus_inf, pos_rep)
 
         return pos_rep
 
