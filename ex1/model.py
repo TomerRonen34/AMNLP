@@ -85,7 +85,7 @@ class WSDModel(nn.Module):
         A = self.softmax(logits)
         Q_c = torch.bmm(A, X @ self.W_O)
 
-        if torch.rand(1).item() < 0.01:
+        if torch.rand(1).item() < 0.0005:
             print("\nA\n", A[0, :5, :5])
             if self.use_positional_encodings:
                 print("\npos_rep\n", pos_rep[:5, :5])
@@ -139,7 +139,6 @@ class WSDModel(nn.Module):
 
         if is_causal:
             is_future = relative_positions > 0
-            # minus_inf = torch.Tensor([-float("inf")]).to(device)
             minus_inf = torch.Tensor([-INF]).to(device)
             pos_rep = torch.where(is_future, minus_inf, pos_rep)
 
