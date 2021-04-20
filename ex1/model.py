@@ -1,7 +1,7 @@
 from typing import Union
 
 import torch
-from torch import nn
+from torch import nn, Tensor
 import torch.nn.init as init
 import math
 from scipy.special import comb as nchoosek
@@ -13,7 +13,8 @@ class WSDModel(nn.Module):
 
     def __init__(self, V, Y, D: int = 300, dropout_prob: float = 0.2, use_padding: bool = False,
                  use_positional_encodings: bool = False, pos_exponent: int = 1, pos_cutoff_position: int = 5,
-                 pos_is_causal: bool = False, pos_normalize_magnitude: bool = False):
+                 pos_is_causal: bool = False, pos_normalize_magnitude: bool = False,
+                 pos_normalization_type: str = "by logits magnitude"):
         super(WSDModel, self).__init__()
         self.use_padding = use_padding
 
@@ -38,6 +39,8 @@ class WSDModel(nn.Module):
         self.pos_cutoff_position = pos_cutoff_position
         self.pos_is_causal = pos_is_causal
         self.pos_normalize_magnitude = pos_normalize_magnitude
+        assert pos_normalization_type in ("by logits magnitude", "half cutoff = -1")
+        self.pos_normalization_type = pos_normalization_type
 
     def attention(self, X, Q, mask):
         """
@@ -64,16 +67,7 @@ class WSDModel(nn.Module):
                                                                is_causal=self.pos_is_causal,
                                                                device=logits.device)
             if self.pos_normalize_magnitude:
-                not_inf = (~torch.isinf(pos_rep)) & (pos_rep != -INF)
-                pos_magnitude = torch.max(torch.abs(pos_rep[not_inf]))
-                logits_magnitude = torch.max(torch.abs(logits))
-
-                pos_rep_norm = pos_rep / pos_magnitude * logits_magnitude
-                pos_rep = torch.where(not_inf, pos_rep_norm, torch.Tensor([-INF]).to(pos_rep.device))
-
-                # not_inf = (~torch.isinf(pos_rep)) & (pos_rep != -INF)
-                # pos_magnitude_after_normalization = torch.max(torch.abs(pos_rep[not_inf]))
-                # print(pos_magnitude.item(), logits_magnitude.item(), pos_magnitude_after_normalization.item())
+                pos_rep = self.normalize_pos_rep(logits, pos_rep)
 
             logits = logits + pos_rep
 
@@ -86,11 +80,24 @@ class WSDModel(nn.Module):
         Q_c = torch.bmm(A, X @ self.W_O)
 
         if torch.rand(1).item() < 0.0005:
+        # if torch.rand(1).item() < 0.01:
             print("\nA\n", A[0, :5, :5])
             if self.use_positional_encodings:
                 print("\npos_rep\n", pos_rep[:5, :5])
 
         return Q_c, A.squeeze()
+
+    def normalize_pos_rep(self, logits: Tensor, pos_rep: Tensor) -> Tensor:
+        not_inf = (~torch.isinf(pos_rep)) & (pos_rep != -INF)
+        if self.pos_normalization_type == "by logits magnitude":
+            pos_magnitude = torch.max(torch.abs(pos_rep[not_inf]))
+            logits_magnitude = torch.max(torch.abs(logits))
+            pos_rep_norm = pos_rep / pos_magnitude * logits_magnitude
+        elif self.pos_normalization_type == "half cutoff = -1":
+            half_cutoff_value = pos_rep[self.pos_cutoff_position // 2, 0].item()
+            pos_rep_norm = pos_rep / abs(half_cutoff_value)
+        pos_rep = torch.where(not_inf, pos_rep_norm, torch.Tensor([-INF]).to(pos_rep.device))
+        return pos_rep
 
     def forward(self, M_s, v_q=None):
         """
