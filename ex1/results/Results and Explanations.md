@@ -14,15 +14,15 @@ The techniques we tried:
 
 | Normalization       | Exponent | Cutoff | Val Acc | Train Acc |
 |---------------------|----------|--------|---------|-----------|
-| None                | 1        | 10     | 0.580   | 0.715     |
+| None                | 1        | 10     | 0.58    | 0.715     |
 | None                | 1.5      | 10     | 0.584   | 0.718     |
 | None                | 2        | 10     | 0.585   | 0.717     |
 | by logits magnitude | 1        | 10     | 0.573   | 0.711     |
 | by logits magnitude | 1.5      | 10     | 0.575   | 0.717     |
 | by logits magnitude | 2        | 10     | 0.573   | 0.715     |
 | half cutoff = -1    | 1        | 10     | 0.561   | 0.702     |
-| half cutoff = -1    | 1.5      | 10     |         |           |
-| half cutoff = -1    | 2        | 10     |         |           |
+| half cutoff = -1    | 1.5      | 10     | 0.565   | 0.712     |
+| half cutoff = -1    | 2        | 10     | 0.567   | 0.719     |
 
 Disappointingly, we got the best results when we didn't use any normalization, which suggests that closer words are usually much more relevant than further words. The exponent didn't have a strong impact on the results, with larger exponents usually having slightly better results.
 
@@ -40,6 +40,6 @@ Overall, the performance of the causal models was worse than the unhindered mode
 | by logits magnitude | 1        | 10     | 0.564   | 0.695     |
 | by logits magnitude | 1.5      | 10     | 0.566   | 0.703     |
 | by logits magnitude | 2        | 10     | 0.565   | 0.705     |
-| half cutoff = -1    | 1        | 10     |         |           |
-| half cutoff = -1    | 1.5      | 10     |         |           |
-| half cutoff = -1    | 2        | 10     |         |           |
+| half cutoff = -1    | 1        | 10     | 0.558   | 0.695     |
+| half cutoff = -1    | 1.5      | 10     | 0.56    | 0.702     |
+| half cutoff = -1    | 2        | 10     | 0.562   | 0.706     |
