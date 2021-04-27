@@ -50,17 +50,14 @@ def train(model, optimizer, wsd_train_dataset, wsd_dev_dataset, num_epochs=20, b
 
     for epoch in range(num_epochs):
 
-        if epoch != 0:
-            model.eval()
-            cur_train_acc = evaluate(model, training_generator, iter_lim=100, ignore_label=no_sense_index)
-            train_acc.append(cur_train_acc)
-            cur_val_acc = evaluate(model, val_generator, ignore_label=no_sense_index)
-        else:
-            cur_val_acc = 0
+        model.eval()
+        cur_train_acc = evaluate(model, training_generator, iter_lim=100, ignore_label=no_sense_index)
+        train_acc.append(cur_train_acc)
+        cur_val_acc = evaluate(model, val_generator, ignore_label=no_sense_index)
         val_acc.append(cur_val_acc)
 
         model.train()
-        with tqdm(training_generator, desc="train") as prg_train:
+        with tqdm(training_generator) as prg_train:
             for i, sample in enumerate(prg_train):
                 optimizer.zero_grad()
 
@@ -101,23 +98,22 @@ def evaluate(model, data_generator, iter_lim=None, ignore_label=None):
         correct = 0
         total = 0
 
-        with tqdm(data_generator, desc="evaluate") as prg_data:
-            for i, sample in enumerate(prg_data):
-                if iter_lim is not None and i >= iter_lim:
-                    break
+        for i, sample in enumerate(data_generator):
+            if iter_lim is not None and i >= iter_lim:
+                break
 
-                y_logits, y_true = __run_sample(sample, model, is_sentence_samples)
+            y_logits, y_true = __run_sample(sample, model, is_sentence_samples)
 
-                _, y_pred = torch.max(y_logits.data, -1)
+            _, y_pred = torch.max(y_logits.data, -1)
 
-                if ignore_label is not None:
-                    sense_mask = y_true.ne(ignore_label)
+            if ignore_label is not None:
+                sense_mask = y_true.ne(ignore_label)
 
-                    y_true = y_true[sense_mask]
-                    y_pred = y_pred[sense_mask]
+                y_true = y_true[sense_mask]
+                y_pred = y_pred[sense_mask]
 
-                correct += (y_pred == y_true).sum()
-                total += y_true.size(0)
+            correct += (y_pred == y_true).sum()
+            total += y_true.size(0)
 
         return float(correct) / float(total)
 
@@ -137,12 +133,11 @@ def __run_sample(sample, model, is_sentence_samples):
         return y_logits, y_true
 
 
-def evaluate_verbose(model, dataset, iter_lim=10, shuffle=True):
-    # TODO check self attention mode
+def evaluate_verbose(model, dataset, iter_lim=10, batch_size=100, shuffle=True, mode="query"):
 
     g = data.DataLoader(
         dataset,
-        batch_size=100,
+        batch_size=batch_size,
         shuffle=shuffle,
     )
 
@@ -161,13 +156,23 @@ def evaluate_verbose(model, dataset, iter_lim=10, shuffle=True):
     y_pred_probs = []
     y_pred_losss = []
 
-    for i, (M_s, v_q, y_true) in enumerate(g):
+    for i, batch in enumerate(g):
         if iter_lim is not None and i >= iter_lim:
             break
 
-        M_s, v_q, y_true = M_s.to(device), v_q.to(device), y_true.to(device)
-        y_logits, A = model(M_s, v_q)
-        _, y_pred = torch.max(y_logits.data, 1)
+        if i > 10: 
+          break
+
+        if mode == "query":
+          M_s, v_q, y_true = batch
+          M_s, v_q, y_true = M_s.to(device), v_q.to(device), y_true.to(device)
+          y_logits, A = model(M_s, v_q)
+        else:
+          M_s, y_true = batch
+          M_s, y_true = M_s.to(device), y_true.to(device)
+          y_logits, A = model(M_s, v_q=None)
+
+        y_scores, y_pred = torch.max(y_logits.data, -1)
 
         correct += (y_pred == y_true).sum()
         total += y_true.size(0)
@@ -176,9 +181,21 @@ def evaluate_verbose(model, dataset, iter_lim=10, shuffle=True):
         for j in range(M_s.shape[0]):
             s = list(map(html.escape, tokens_vocab.decode_list(M_s[j])))
             sentence_rows.append(s)
-            q_tokens.append(html.escape(tokens_vocab.decode(M_s[j][v_q[j]])))
+            if mode == "query":
+              q_tokens.append(html.escape(tokens_vocab.decode(M_s[j][v_q[j]])))
+            else:
+              q_tokens.extend([
+                html.escape(tokens_vocab.decode(M_s[j][i])) for i in range(M_s.shape[1])
+              ])
 
-        v_qs.append(v_q.cpu().numpy())
+        if mode == "query":
+          v_qs.append(v_q.cpu().numpy())
+        else:
+          v_qs.extend(list(M_s))
+
+        if y_true.shape[0] == 1:
+          y_true = y_true.squeeze(0) 
+
         y_true_np = y_true.cpu().numpy()
         y_trues.append(y_true_np)
         y_preds.append(y_pred.cpu().numpy())
@@ -191,8 +208,13 @@ def evaluate_verbose(model, dataset, iter_lim=10, shuffle=True):
 
     acc = float(correct) / float(total)
 
-    eval_df = pd.DataFrame(sentence_rows)
-    eval_df.insert(0, 'query', np.concatenate(v_qs))
+    if mode == "query":
+      eval_df = pd.DataFrame(sentence_rows)
+      eval_df.insert(0, 'query', np.concatenate(v_qs))
+    else:
+      eval_df = pd.DataFrame(sentence_rows * M_s.shape[1])
+      eval_df.insert(0, 'query', np.arange(len(sentence_rows[0])))
+    
     eval_df.insert(1, 'query_token', q_tokens)
     eval_df.insert(2, 'y_true', list(map(html.escape, y_vocab.decode_list(np.concatenate(y_trues)))))
     eval_df.insert(3, 'y_pred', list(map(html.escape, y_vocab.decode_list(np.concatenate(y_preds)))))
@@ -200,8 +222,8 @@ def evaluate_verbose(model, dataset, iter_lim=10, shuffle=True):
     eval_df.insert(5, 'y_pred_loss', np.concatenate(y_pred_losss))
 
     eval_df.reset_index(inplace=True)
-
     attention_df = pd.DataFrame(np.concatenate(As))
+
     return eval_df, attention_df
 
 
@@ -216,9 +238,9 @@ def highlight(eval_df, attention_df, slicer):
         row_attention = attention_df.loc[row['index']]
         style_arr = np.array([''] * len(row_attention), dtype='<U50')
         style_arr[row_attention > 0] = np.array(Styler._background_gradient(row_attention[row_attention > 0]))
-
         style_vec += list(style_arr)
         style_vec[I + q] = 'background-color: lightgreen'
+
         return style_vec
 
     eval_df_styled = eval_df.iloc[slicer].style \
@@ -233,12 +255,14 @@ def highlight(eval_df, attention_df, slicer):
     return eval_df_styled
 
 
-def higlight_samples(model, dataset, sample_size=20, correct_only=False):
-    eval_df, attention_df = evaluate_verbose(model, dataset, iter_lim=100)
+def higlight_samples(model, dataset, sample_size=20, iter_lim=100, batch_size=100, correct_only=False, mode="query"):
+    eval_df, attention_df = evaluate_verbose(model, dataset, iter_lim=iter_lim, batch_size=batch_size, mode=mode)
     if correct_only:
         idxs = np.where(eval_df['y_true'] == eval_df['y_pred'])
         idxs = list(idxs[0][:sample_size])
+    elif mode == "self_attention":
+      idxs = list(range(134))
     else:
-        idxs = list(range(sample_size))
+      idxs = list(range(sample_size))
 
     return highlight(eval_df, attention_df, idxs)

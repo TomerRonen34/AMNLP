@@ -39,7 +39,8 @@ class WSDModel(nn.Module):
         self.pos_cutoff_position = pos_cutoff_position
         self.pos_is_causal = pos_is_causal
         self.pos_normalize_magnitude = pos_normalize_magnitude
-        assert pos_normalization_type in ("by logits magnitude", "half cutoff = -1")
+        if self.pos_normalize_magnitude: 
+          assert pos_normalization_type in ("by logits magnitude", "half cutoff = -1")
         self.pos_normalization_type = pos_normalization_type
 
     def attention(self, X, Q, mask):
@@ -57,7 +58,7 @@ class WSDModel(nn.Module):
             Contextualized query and attention matrix / vector
         """
         # TODO Part 1: Your code here.
-        # Have a look at the difference between torch.matmul() and torch.bmm().      
+        # Have a look at the difference between torch.matmul() and torch.bmm().
         logits = torch.bmm(Q @ self.W_A, X.transpose(1, 2))
 
         if self.use_positional_encodings:
@@ -78,12 +79,6 @@ class WSDModel(nn.Module):
         # TODO Part 1: continue.
         A = self.softmax(logits)
         Q_c = torch.bmm(A, X @ self.W_O)
-
-        if torch.rand(1).item() < 0.0005:
-        # if torch.rand(1).item() < 0.01:
-            print("\nA\n", A[0, :5, :5])
-            if self.use_positional_encodings:
-                print("\npos_rep\n", pos_rep[:5, :5])
 
         return Q_c, A.squeeze()
 
@@ -150,36 +145,3 @@ class WSDModel(nn.Module):
             pos_rep = torch.where(is_future, minus_inf, pos_rep)
 
         return pos_rep
-
-    def generate_position_factors_2(self, seq_len: int, window_size: int = 3,
-                                    kernel_type: str = "binomial",
-                                    use_zero_factors_for_distant_words: bool = True) -> torch.Tensor:
-        """
-        :param kernel_type:
-            "binomial": using binomial coefficients to approximate a gaussian distribution.
-            "mean": a simple mean kernel e.g. [0.333, 0.333, 0.333]
-        """
-        kernel_size = 2 * window_size + 1
-        if kernel_type == "binomial":
-            weights_kernel = [nchoosek(kernel_size - 1, k) for k in range(0, kernel_size)]
-        elif kernel_type == "mean":
-            weights_kernel = [1] * kernel_size
-        weights_kernel = torch.Tensor(weights_kernel)
-        weights_kernel = weights_kernel / weights_kernel.sum()
-
-        if use_zero_factors_for_distant_words:
-            single_pos_rep = torch.zeros(seq_len)
-        else:
-            single_pos_rep = torch.ones(seq_len) * weights_kernel.min()
-
-        single_pos_rep = torch.cat([weights_kernel, single_pos_rep])
-
-        all_pos_rep = []
-        for i in range(window_size + 1, seq_len + window_size + 1):
-            curr_pos_rep = torch.roll(single_pos_rep, i)
-            curr_pos_rep = curr_pos_rep[kernel_size:]
-            curr_pos_rep = curr_pos_rep.unsqueeze(1)
-            all_pos_rep.append(curr_pos_rep)
-
-        pos_rep_matrix = torch.cat(all_pos_rep, dim=1)
-        return pos_rep_matrix
