@@ -403,9 +403,13 @@ class TransformerEncoder(FairseqEncoder):
             self.layers = LayerDropModuleList(p=self.encoder_layerdrop)
         else:
             self.layers = nn.ModuleList([])
-        self.layers.extend(
-            [self.build_encoder_layer(args) for i in range(args.encoder_layers)]
-        )
+
+        # TODO: PART 3 Here
+        if args.enc_layer_configuration:
+            self.layers.extend(self.build_encoder_layer_custom(args))
+        else:
+            self.layers.extend([self.build_encoder_layer(args) for i in range(args.encoder_layers)])
+
         self.num_layers = len(self.layers)
 
         if args.encoder_normalize_before:
@@ -427,6 +431,9 @@ class TransformerEncoder(FairseqEncoder):
         )
         layer = fsdp_wrap(layer, min_num_params=min_params_to_wrap)
         return layer
+
+    def build_encoder_layer_custom(self, args):
+        return []
 
     def forward_embedding(
         self, src_tokens, token_embedding: Optional[torch.Tensor] = None
@@ -531,11 +538,19 @@ class TransformerEncoder(FairseqEncoder):
         if return_all_hiddens:
             encoder_states.append(x)
 
+        # TODO: PART 2
+
         # encoder layers
-        for layer in self.layers:
-            x = layer(
-                x, encoder_padding_mask=encoder_padding_mask if has_pads else None
-            )
+        for layer_idx, layer in enumerate(self.layers):
+            if self.args.mask_layer_type == 'enc-enc' and layer_idx == self.args.mask_layer:
+                mask_head = self.args.mask_head
+            else:
+                mask_head = -1
+
+            x = layer(x,
+                      encoder_padding_mask=encoder_padding_mask if has_pads else None,
+                      mask_head=mask_head)
+
             if return_all_hiddens:
                 assert encoder_states is not None
                 encoder_states.append(x)
@@ -937,6 +952,9 @@ class TransformerDecoder(FairseqIncrementalDecoder):
         if self.cross_self_attention or prev_output_tokens.eq(self.padding_idx).any():
             self_attn_padding_mask = prev_output_tokens.eq(self.padding_idx)
 
+        # TODO: PART 2
+        # TODO: where does enc-dec layers come into play?
+
         # decoder layers
         attn: Optional[Tensor] = None
         inner_states: List[Optional[Tensor]] = [x]
@@ -945,6 +963,11 @@ class TransformerDecoder(FairseqIncrementalDecoder):
                 self_attn_mask = self.buffered_future_mask(x)
             else:
                 self_attn_mask = None
+
+            if self.args.mask_layer_type == 'dec-dec' and idx == self.args.mask_layer:
+                mask_head = self.args.mask_head
+            else:
+                mask_head = -1
 
             x, layer_attn, _ = layer(
                 x,
@@ -955,6 +978,7 @@ class TransformerDecoder(FairseqIncrementalDecoder):
                 self_attn_padding_mask=self_attn_padding_mask,
                 need_attn=bool((idx == alignment_layer)),
                 need_head_weights=bool((idx == alignment_layer)),
+                mask_head=mask_head,
             )
             inner_states.append(x)
             if layer_attn is not None and idx == alignment_layer:
@@ -1138,6 +1162,7 @@ def base_architecture(args):
 
 @register_model_architecture("transformer", "transformer_iwslt_de_en")
 def transformer_iwslt_de_en(args):
+    args.encoder_layer_configuration = getattr(args, "enc_layer_configuration", "")
     args.encoder_embed_dim = getattr(args, "encoder_embed_dim", 512)
     args.encoder_ffn_embed_dim = getattr(args, "encoder_ffn_embed_dim", 1024)
     args.encoder_attention_heads = getattr(args, "encoder_attention_heads", 4)

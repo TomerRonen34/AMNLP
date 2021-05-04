@@ -103,7 +103,7 @@ class TransformerEncoderLayer(nn.Module):
                     state_dict["{}.{}.{}".format(name, new, m)] = state_dict[k]
                     del state_dict[k]
 
-    def forward(self, x, encoder_padding_mask: Optional[Tensor], attn_mask: Optional[Tensor] = None):
+    def forward(self, x, encoder_padding_mask: Optional[Tensor], attn_mask: Optional[Tensor] = None, mask_head: Optional[int] = -1):
         """
         Args:
             x (Tensor): input to the layer of shape `(seq_len, batch, embed_dim)`
@@ -115,6 +115,8 @@ class TransformerEncoderLayer(nn.Module):
                 `attn_mask[tgt_i, src_j] = 1` means that when calculating the
                 embedding for `tgt_i`, we exclude (mask out) `src_j`. This is
                 useful for strided self-attention.
+            mask_head (int): integer indicating which attention head to mask.
+            If mask_head == -1, do not mask any heads
 
         Returns:
             encoded output of shape `(seq_len, batch, embed_dim)`
@@ -137,6 +139,7 @@ class TransformerEncoderLayer(nn.Module):
             key_padding_mask=encoder_padding_mask,
             need_weights=False,
             attn_mask=attn_mask,
+            mask_head=mask_head
         )
         x = self.dropout_module(x)
         x = self.residual_connection(x, residual)
@@ -288,6 +291,7 @@ class TransformerDecoderLayer(nn.Module):
         self_attn_padding_mask: Optional[torch.Tensor] = None,
         need_attn: bool = False,
         need_head_weights: bool = False,
+        mask_head: int = -1
     ):
         """
         Args:
@@ -298,6 +302,8 @@ class TransformerDecoderLayer(nn.Module):
             need_attn (bool, optional): return attention weights
             need_head_weights (bool, optional): return attention weights
                 for each head (default: return average over heads).
+            mask_head (int): integer indicating which attention head to mask.
+                If mask_head == -1, do not mask any heads
 
         Returns:
             encoded output of shape `(seq_len, batch, embed_dim)`
@@ -351,6 +357,7 @@ class TransformerDecoderLayer(nn.Module):
             incremental_state=incremental_state,
             need_weights=False,
             attn_mask=self_attn_mask,
+            mask_head=mask_head
         )
         x = self.dropout_module(x)
         x = self.residual_connection(x, residual)

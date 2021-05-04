@@ -125,6 +125,7 @@ class MultiheadAttention(nn.Module):
         attn_mask: Optional[Tensor] = None,
         before_softmax: bool = False,
         need_head_weights: bool = False,
+        mask_head: int = -1
     ) -> Tuple[Tensor, Optional[Tensor]]:
         """Input shape: Time x Batch x Channel
 
@@ -142,6 +143,9 @@ class MultiheadAttention(nn.Module):
             need_head_weights (bool, optional): return the attention
                 weights for each head. Implies *need_weights*. Default:
                 return the average attention weights over all heads.
+            mask_head (int): integer indicating which attention head to mask.
+                If mask_head == -1, do not mask any heads
+
         """
         if need_head_weights:
             need_weights = True
