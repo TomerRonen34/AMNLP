@@ -36,12 +36,38 @@ Generate valid with beam=5: BLEU4 = 33.46, 69.1/42.8/28.4/19.4 (BP=0.936, ratio=
 
 3 last lines from the baseline_mask.log file: 
 ```txt
-<write here>
+2021-05-05 17:50:40 | INFO | fairseq_cli.generate | NOTE: hypothesis and token scores are output in base 2
+2021-05-05 17:50:40 | INFO | fairseq_cli.generate | Translated 7,283 sentences (166,416 tokens) in 27.3s (266.77 sentences/s, 6095.65 tokens/s)
+Generate valid with beam=5: BLEU4 = 32.36, 67.8/41.3/27.0/18.1 (BP=0.946, ratio=0.947, syslen=140417, reflen=148229)
 ```
 
 25 last lines from the check_all_masking_options.log file: 
 ```txt
-<write here>
+2021-05-05 18:59:57 | INFO | fairseq.tasks.translation | /nfs/private/yuval/AMNLP/ex2/data-bin/iwslt14.tokenized.de-en valid de-en 7283 examples
+2021-05-05 19:01:19 | INFO | fairseq_cli.generate | NOTE: hypothesis and token scores are output in base 2
+2021-05-05 19:01:19 | INFO | fairseq_cli.generate | Translated 7,283 sentences (165,337 tokens) in 25.5s (285.58 sentences/s, 6483.22 tokens/s)
+Generate valid with beam=5: BLEU4 = 33.42, 68.9/42.7/28.3/19.3 (BP=0.938, ratio=0.940, syslen=139329, reflen=148229)
+table of score with masking enc-enc attention head
+rows are transformer layer number and columns are head number
+       0      1      2      3
+0  33.46  33.42  33.31  33.29
+1  33.18  33.41  33.42  33.27
+2  33.35  32.43  32.31  33.37
+3  33.39  33.13  29.67  33.46
+table of score with masking enc-dec attention head
+rows are transformer layer number and columns are head number
+       0      1      2      3
+0  33.32  33.23  16.26  33.23
+1  33.19  33.43  33.01  33.25
+2  33.34  33.49  32.82  32.89
+3  32.36  32.86  32.42  32.88
+table of score with masking dec-dec attention head
+rows are transformer layer number and columns are head number
+       0      1      2      3
+0  33.41  33.40  33.46  33.38
+1  33.46  33.40  33.32  33.40
+2  33.32  33.38  33.02  33.35
+3  33.39  33.45  33.33  33.42
 ```
 
 3 last lines from the sandwich_train.log file: 

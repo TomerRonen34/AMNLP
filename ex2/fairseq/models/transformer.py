@@ -409,6 +409,7 @@ class TransformerEncoder(FairseqEncoder):
             self.layers.extend(self.build_encoder_layer_custom(args))
         else:
             self.layers.extend([self.build_encoder_layer(args) for i in range(args.encoder_layers)])
+        # self.layers.extend([self.build_encoder_layer(args) for i in range(args.encoder_layers)])
 
         self.num_layers = len(self.layers)
 
@@ -542,10 +543,11 @@ class TransformerEncoder(FairseqEncoder):
 
         # encoder layers
         for layer_idx, layer in enumerate(self.layers):
+            # YA: ADDED MASKING CHECK HERE
             if self.args.mask_layer_type == 'enc-enc' and layer_idx == self.args.mask_layer:
                 mask_head = self.args.mask_head
             else:
-                mask_head = -1
+                mask_head = None
 
             x = layer(x,
                       encoder_padding_mask=encoder_padding_mask if has_pads else None,
@@ -952,9 +954,6 @@ class TransformerDecoder(FairseqIncrementalDecoder):
         if self.cross_self_attention or prev_output_tokens.eq(self.padding_idx).any():
             self_attn_padding_mask = prev_output_tokens.eq(self.padding_idx)
 
-        # TODO: PART 2
-        # TODO: where does enc-dec layers come into play?
-
         # decoder layers
         attn: Optional[Tensor] = None
         inner_states: List[Optional[Tensor]] = [x]
@@ -964,10 +963,11 @@ class TransformerDecoder(FairseqIncrementalDecoder):
             else:
                 self_attn_mask = None
 
-            if self.args.mask_layer_type == 'dec-dec' and idx == self.args.mask_layer:
-                mask_head = self.args.mask_head
+            # YA: ADDED MASKING CHECK HERE
+            if self.args.mask_layer_type in ['dec-dec', 'enc-dec'] and idx == self.args.mask_layer:
+                mask_head, mask_layer_type = self.args.mask_head, self.args.mask_layer_type
             else:
-                mask_head = -1
+                mask_head, mask_layer_type = None, None
 
             x, layer_attn, _ = layer(
                 x,
@@ -979,6 +979,7 @@ class TransformerDecoder(FairseqIncrementalDecoder):
                 need_attn=bool((idx == alignment_layer)),
                 need_head_weights=bool((idx == alignment_layer)),
                 mask_head=mask_head,
+                mask_layer_type=mask_layer_type
             )
             inner_states.append(x)
             if layer_attn is not None and idx == alignment_layer:

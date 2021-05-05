@@ -125,7 +125,7 @@ class MultiheadAttention(nn.Module):
         attn_mask: Optional[Tensor] = None,
         before_softmax: bool = False,
         need_head_weights: bool = False,
-        mask_head: int = -1
+        mask_head: int = None
     ) -> Tuple[Tensor, Optional[Tensor]]:
         """Input shape: Time x Batch x Channel
 
@@ -144,7 +144,7 @@ class MultiheadAttention(nn.Module):
                 weights for each head. Implies *need_weights*. Default:
                 return the average attention weights over all heads.
             mask_head (int): integer indicating which attention head to mask.
-                If mask_head == -1, do not mask any heads
+                If mask_head == None, do not mask the attention head.
 
         """
         if need_head_weights:
@@ -228,6 +228,7 @@ class MultiheadAttention(nn.Module):
             q = self.q_proj(query)
             k = self.k_proj(key)
             v = self.v_proj(value)
+
         q *= self.scaling
 
         if self.bias_k is not None:
@@ -347,6 +348,12 @@ class MultiheadAttention(nn.Module):
                 attn_mask = attn_mask.repeat(attn_weights.size(0), 1, 1)
             attn_weights += attn_mask
 
+        if mask_head is not None:
+            # mask all attention weights of the specified head
+            attn_weights = attn_weights.view(bsz, self.num_heads, tgt_len, src_len)
+            attn_weights[:, mask_head] = 0.
+            attn_weights = attn_weights.view(bsz * self.num_heads, tgt_len, src_len)
+
         if key_padding_mask is not None:
             # don't attend to padding symbols
             attn_weights = attn_weights.view(bsz, self.num_heads, tgt_len, src_len)
@@ -364,9 +371,7 @@ class MultiheadAttention(nn.Module):
         if before_softmax:
             return attn_weights, v
 
-        attn_weights_float = utils.softmax(
-            attn_weights, dim=-1, onnx_trace=self.onnx_trace
-        )
+        attn_weights_float = utils.softmax(attn_weights, dim=-1, onnx_trace=self.onnx_trace)
         attn_weights = attn_weights_float.type_as(attn_weights)
         attn_probs = self.dropout_module(attn_weights)
 

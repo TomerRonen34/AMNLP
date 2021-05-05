@@ -103,7 +103,7 @@ class TransformerEncoderLayer(nn.Module):
                     state_dict["{}.{}.{}".format(name, new, m)] = state_dict[k]
                     del state_dict[k]
 
-    def forward(self, x, encoder_padding_mask: Optional[Tensor], attn_mask: Optional[Tensor] = None, mask_head: Optional[int] = -1):
+    def forward(self, x, encoder_padding_mask: Optional[Tensor], attn_mask: Optional[Tensor] = None, mask_head: Optional[int] = None):
         """
         Args:
             x (Tensor): input to the layer of shape `(seq_len, batch, embed_dim)`
@@ -116,7 +116,7 @@ class TransformerEncoderLayer(nn.Module):
                 embedding for `tgt_i`, we exclude (mask out) `src_j`. This is
                 useful for strided self-attention.
             mask_head (int): integer indicating which attention head to mask.
-            If mask_head == -1, do not mask any heads
+                If mask_head == None, do not mask any heads
 
         Returns:
             encoded output of shape `(seq_len, batch, embed_dim)`
@@ -132,6 +132,7 @@ class TransformerEncoderLayer(nn.Module):
         residual = x
         if self.normalize_before:
             x = self.self_attn_layer_norm(x)
+
         x, _ = self.self_attn(
             query=x,
             key=x,
@@ -291,7 +292,8 @@ class TransformerDecoderLayer(nn.Module):
         self_attn_padding_mask: Optional[torch.Tensor] = None,
         need_attn: bool = False,
         need_head_weights: bool = False,
-        mask_head: int = -1
+        mask_head: int = None,
+        mask_layer_type: str = None
     ):
         """
         Args:
@@ -303,7 +305,9 @@ class TransformerDecoderLayer(nn.Module):
             need_head_weights (bool, optional): return attention weights
                 for each head (default: return average over heads).
             mask_head (int): integer indicating which attention head to mask.
-                If mask_head == -1, do not mask any heads
+                If mask_head == None, do not mask any heads
+            mask_layer_type (str): string indicating whether the masking should be applied on the
+                enc-dec attention layer or the dec-dec attention layer. If None, do not perform masking
 
         Returns:
             encoded output of shape `(seq_len, batch, embed_dim)`
@@ -357,7 +361,7 @@ class TransformerDecoderLayer(nn.Module):
             incremental_state=incremental_state,
             need_weights=False,
             attn_mask=self_attn_mask,
-            mask_head=mask_head
+            mask_head=mask_head if mask_layer_type == "dec-dec" else None     # YA: ADDED MASKING CHECK HERE
         )
         x = self.dropout_module(x)
         x = self.residual_connection(x, residual)
@@ -388,6 +392,7 @@ class TransformerDecoderLayer(nn.Module):
                 static_kv=True,
                 need_weights=need_attn or (not self.training and self.need_attn),
                 need_head_weights=need_head_weights,
+                mask_head=mask_head if mask_layer_type == "enc-dec" else None     # YA: ADDED MASKING CHECK HERE
             )
             x = self.dropout_module(x)
             x = self.residual_connection(x, residual)
