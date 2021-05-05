@@ -330,7 +330,7 @@ class FullyConnectedEncoderLayer(nn.Module):
                     state_dict["{}.{}.{}".format(name, new, m)] = state_dict[k]
                     del state_dict[k]
 
-    def forward(self, x):
+    def forward(self, x, *args, **kwargs):
         """
         Args:
             x (Tensor): input to the layer of shape `(seq_len, batch, embed_dim)`
