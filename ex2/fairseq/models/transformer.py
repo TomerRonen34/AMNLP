@@ -32,6 +32,7 @@ from fairseq.modules.checkpoint_activations import checkpoint_wrapper
 from fairseq.modules.quant_noise import quant_noise as apply_quant_noise_
 from torch import Tensor
 
+from fairseq.modules.transformer_layer import AttentionEncoderLayer, FullyConnectedEncoderLayer
 
 DEFAULT_MAX_SOURCE_POSITIONS = 1024
 DEFAULT_MAX_TARGET_POSITIONS = 1024
@@ -403,9 +404,22 @@ class TransformerEncoder(FairseqEncoder):
             self.layers = LayerDropModuleList(p=self.encoder_layerdrop)
         else:
             self.layers = nn.ModuleList([])
-        self.layers.extend(
-            [self.build_encoder_layer(args) for i in range(args.encoder_layers)]
-        )
+
+        self.enc_layer_configuration = args.enc_layer_configuration
+        if self.enc_layer_configuration == '':
+            self.layers.extend(
+                [self.build_encoder_layer(args) for i in range(args.encoder_layers)]
+            )
+        else:
+            assert all([layer_type in ('A', 'F') for layer_type in self.enc_layer_configuration])
+            for layer_type in self.enc_layer_configuration:
+                if layer_type == 'A':
+                    layer = AttentionEncoderLayer(args)
+                else:
+                    layer = FullyConnectedEncoderLayer(args)
+                layer = self.wrap_encoder_layer(layer, args)
+                self.layers.append(layer)
+
         self.num_layers = len(self.layers)
 
         if args.encoder_normalize_before:
@@ -415,6 +429,20 @@ class TransformerEncoder(FairseqEncoder):
 
     def build_encoder_layer(self, args):
         layer = TransformerEncoderLayer(args)
+        checkpoint = getattr(args, "checkpoint_activations", False)
+        if checkpoint:
+            offload_to_cpu = getattr(args, "offload_activations", False)
+            layer = checkpoint_wrapper(layer, offload_to_cpu=offload_to_cpu)
+        # if we are checkpointing, enforce that FSDP always wraps the
+        # checkpointed layer, regardless of layer size
+        min_params_to_wrap = (
+            getattr(args, "min_params_to_wrap", DEFAULT_MIN_PARAMS_TO_WRAP)
+            if not checkpoint else 0
+        )
+        layer = fsdp_wrap(layer, min_num_params=min_params_to_wrap)
+        return layer
+
+    def wrap_encoder_layer(self, layer, args):
         checkpoint = getattr(args, "checkpoint_activations", False)
         if checkpoint:
             offload_to_cpu = getattr(args, "offload_activations", False)
